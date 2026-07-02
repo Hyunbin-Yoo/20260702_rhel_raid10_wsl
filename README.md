@@ -8,18 +8,69 @@ Install WSL2. Additional features like Hyper-V must be enabled. Other virtualiza
 + Create a free Red Hat Developer Account and download the [official RHEL 10 WSL2 image](https://access.redhat.com/downloads/content/479/ver=/rhel---10/10.2/x86_64/product-software).
 + On Powershell, create a directory to store your RHEL 10 installation, and import the WSL2 image.
   ```Powershell
-  mkdir C:\Linux\RHEL10
-  wsl --import RHEL10 C:\Linux\RHEL10 C:\Users\"Your Username"\Downloads\rhel-10.2-x86_64-wsl2.wsl
+  PS> mkdir C:\Linux\RHEL10
+  PS> wsl --import RHEL10 C:\Linux\RHEL10 C:\Users\"Your Username"\Downloads\rhel-10.2-x86_64-wsl2.wsl
   ```
 + Start RHEL 10.
   ```Powershell
-  wsl -d RHEL10
+  PS> wsl -d RHEL10
   ```
+
 ## Attach USB devices to WSL
 + WSL2 require additional software to be able to directly access USB devices. We use ```usbipd-win```. Download the [correct MSI file for your CPU](https://github.com/dorssel/usbipd-win/releases/latest).
++ WSL2 images are minimal so many packages that come preinstalled in a full installation are missing. We add our subscription to the installation, then install necessary packages.
+  ```console
+  $ sudo subscription-manager register
+  $ sudo dnf clean all
+  $ sudo dnf -y install kmod usbutils
+  ``` 
 + Plug in the four USB drives.
 + On Powershell, find the Bus IDs of the four USB drives.
   ```Powershell
-  usbipd list
-  
+  PS> usbipd list
+  Connected:
+  BUSID  VID:PID    DEVICE                                                        STATE
+  (...)
+  2-1    AAAA:BBBB  USB Mass Storage Device                                       Not shared
+  2-2    AAAA:BBBB  USB Mass Storage Device                                       Not shared
+  3-1    AAAA:BBBB  USB Mass Storage Device                                       Not shared
+  3-2    AAAA:BBBB  USB Mass Storage Device                                       Not shared
+  (...)
+  ```
++ Bind the devices, then attach them to RHEL using the acquired BUS IDs.
+  ```Powershell
+  PS> usbipd bind --busid 2-1
+  PS> usbipd bind --busid 2-2
+  PS> usbipd bind --busid 3-1
+  PS> usbipd bind --busid 3-2
+  PS> usbipd attach --wsl --busid 2-1
+  usbipd: info: Using WSL distribution 'RHEL10' to attach; the device will be available in all WSL 2 distributions.
+  usbipd: info: Loading vhci_hcd module.
+  usbipd: info: Detected networking mode 'nat'.
+  usbipd: info: Using IP address 172.18.160.1 to reach the host.
+  PS> usbipd attach --wsl --busid 2-2
+  PS> usbipd attach --wsl --busid 3-1
+  PS> usbipd attach --wsl --busid 3-2
+  ```
++ Confirm that the USB devices are now accessible from WSL2.
+  ```Powershell
+  PS> usbipd list
+  BUSID  VID:PID    DEVICE                                                        STATE
+  (...)
+  2-1    AAAA:BBBB  USB Mass Storage Device                                       Attached
+  2-2    AAAA:BBBB  USB Mass Storage Device                                       Attached
+  3-1    AAAA:BBBB  USB Mass Storage Device                                       Attached
+  3-2    AAAA:BBBB  USB Mass Storage Device                                       Attached  
+  ```
+  ```console
+  $ lsusb
+  Bus 002 Device 001: ID AAAA:BBBB USB Mass Storage Device
+  Bus 002 Device 002: ID AAAA:BBBB USB Mass Storage Device
+  Bus 003 Device 001: ID AAAA:BBBB USB Mass Storage Device
+  Bus 003 Device 002: ID AAAA:BBBB USB Mass Storage Device
+  ```
++ Load kernel modules so that the kernel can map the USBs to block devices.
+  ```console
+  $ sudo modprobe usb-storage
+  $ sudo modprobe uas
   ```
