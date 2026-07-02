@@ -113,6 +113,22 @@ Install WSL2. Additional features like Hyper-V must be enabled. Other virtualiza
   PS> wsl --shutdown
   ```
 
-## Check automount
+## Confirm Correct RAID 10 Configuration
 + Restart RHEL 10.
-+ 0
++ Because connections were severed, the USBs must be attached to WSL2 again.
+  ```Powershell
+  PS> usbipd attach --wsl --busid 2-1
+  usbipd: info: Using WSL distribution 'RHEL10' to attach; the device will be available in all WSL 2 distributions.
+  usbipd: info: Loading vhci_hcd module.
+  usbipd: info: Detected networking mode 'nat'.
+  usbipd: info: Using IP address 172.18.160.1 to reach the host.
+  WSL wsl: Processing /etc/fstab with mount -a failed.
+  PS> usbipd attach --wsl --busid 2-2
+  PS> usbipd attach --wsl --busid 3-1
+  PS> usbipd attach --wsl --busid 3-2
+  ```
++ Interestingly, WSL2 automatically attempts to process ```/etc/fstab```. I forgot to reload the kernel modules, hence the failures.
+  ```console
+  $ sudo modprobe usb-storage
+  $ sudo modprobe uas
+  ```
