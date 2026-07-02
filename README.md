@@ -74,3 +74,45 @@ Install WSL2. Additional features like Hyper-V must be enabled. Other virtualiza
   $ sudo modprobe usb-storage
   $ sudo modprobe uas
   ```
+
+## Create Raid
++ Identify the block device names of the four USBs.
+  ```console
+  $ lsblk
+  NAME    MAJ:MIN RM   SIZE RO TYPE   MOUNTPOINTS
+  (...)
+  sdc       8:XX   1  58.8G  0 disk
+  sdd       8:XX   1  58.8G  0 disk
+  sde       8:XX   1  58.8G  0 disk
+  sdf       8:XX   1  58.8G  0 disk
+  (...)
+  ```
++ Format each USB with GPT, and a single Linux RAID partition.
+  ```console
+  $ fdisk /dev/sdc
+  # g (GPT), d (Delete if partitions already exist), n (New), p (Primary), 1 (Partition No.), t (Partition Type), raid (Linux Raid Partition), p (Check Changes), w (Write Changes)
+  $ fdisk /dev/sdd
+  $ fdisk /dev/sde
+  $ fdisk /dev/sdf
+  ```
++ Create the RAID 10 Array, format it using ext4 and mount it.
+  ```console
+  $ sudo mdadm --create /dev/md0 --level=10 --raid-devices=4 /dev/sdc1 /dev/sdd1 /dev/sde1 /dev/sdf1
+  $ sudo mkfs.ext4 /dev/md0
+  $ sudo mkdir -p /mnt/raid10
+  $ sudo mount /dev/md0 /mnt/raid10
+  ```
++ Edit ```fstab``` and ```mdadm``` config file so that the RAID array would automatically mount in the next boot.
+  ```console
+  $ sudo nano /etc/fstab
+  /dev/md0 /mnt/raid10 ext4 defaults,nofail 0 0
+  $ sudo mdadm --detail --scan > /etc/madam.conf
+  ```
++ Close the RHEL 10 Terminal, and fully shutdown WSL2 to simulate a hard startup.
+  ```Powershell
+  PS> wsl --shutdown
+  ```
+
+## Check automount
++ Restart RHEL 10.
++ 0
