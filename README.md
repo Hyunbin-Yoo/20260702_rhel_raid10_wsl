@@ -235,4 +235,14 @@ Install WSL2. Additional features like Hyper-V must be enabled. Other virtualiza
     ```
   + At this point, the new USB and the old USB on the same stripe begin blinking rapidly as the RAID gets rebuilt.
   + The rebuilding took over 30 minutes, and Wireshark captured thousands of TCP traffic per second between the virtualized hosts.
-  + 
+  + Finally we unmount and close all USB sonnections.
+    ```console
+    $ sudo umount /mnt/raid10
+    $ sudo mdadm --stop /dev/md0
+    $ sudo modprobe -r vhci_hcdwsl
+    ```
+
+  # Takeaways
+  + Using WSL2 complicated things. Because virtualization abstracts the physical insertion of drives, which is a core part of the test, additional work had to be done to get around the abstraction. You shouldn't choose abstraction when the abstraction abstracts away what you are working on.
+  + Change Management is hard in real hardware. Unlike software development, where we can always travel back to anypoint in time as long as git commits are made frequently, you can't immediately transition to an arbitrary state. Furthermore, some operations cannot be undone easily. I realized that I should have identified each bus and which drive letter each USB corresponded to early on.
+  + Damage Recovery is expensive. Using virtual drives in VMWare, rebuilding arrays took less than 10 seconds. This time even though the USBs were each less than 100GBs in size, it took over 30 minutes to fully recover. This is because as the read/write progressed, the laptop and the USBs were overheating, severly slowing down the operation. When the rebuilding was finished, the laptop was so hot that placing my finger on top of it could have resulted in a burn.
