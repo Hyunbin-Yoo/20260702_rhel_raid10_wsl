@@ -113,7 +113,7 @@ Install WSL2. Additional features like Hyper-V must be enabled. Other virtualiza
   PS> wsl --shutdown
   ```
 
-## Confirm Correct RAID 10 Configuration
+## Confirm RAID Configuration Survives Reboot
 + Restart RHEL 10.
 + Because connections were severed, the USBs must be attached to WSL2 again.
   ```Powershell
@@ -127,8 +127,112 @@ Install WSL2. Additional features like Hyper-V must be enabled. Other virtualiza
   PS> usbipd attach --wsl --busid 3-1
   PS> usbipd attach --wsl --busid 3-2
   ```
-+ Interestingly, WSL2 automatically attempts to process ```/etc/fstab```. I forgot to reload the kernel modules, hence the failures.
++ Interestingly, WSL2 automatically attempts to process ```/etc/fstab```. I forgot to reload the kernel modules, hence the failures. In future labs I should create a custom module file in ```/etc/modules-load.d``` to automate this.
   ```console
   $ sudo modprobe usb-storage
   $ sudo modprobe uas
+  $ modprobe md_mod
+  $ mdadm --assemble --scan
   ```
+
+## Perform Hot Swap and Confirm Data Integrity
++ Because cold unplugging is not possible due to how the abstraction layers interact, we will only test hot swapping. While data is being written to the RAID array, we randomly unplug one of the four USBs and swap it with a fifth USB.
+  ```console
+  $ cat /test.sh
+  #!/bin/bash
+  
+  # Create temporary folder in RAID and move to that directory
+  mkdir -p /mnt/raid10/tempdata
+  cd /mnt/raid10/tempdata
+  
+  # Initialize counter
+  i=1
+  
+  # Print explanation
+  printf "Beginning RAID10 Integrity Test...\n"
+  printf "Writing 30 random files in RAID...\n"
+  
+  # Write a total of 30 files
+  while [ ${i} -le 30 ]
+  do
+  	# Instruct user to pull out one USB drive before writing 4th
+  	if [ ${i} -eq 4 ]
+  	then
+  	printf "\n\e[1;31m PULL OUT A RANDOM DRIVE NOW!\e[0m\n\n"
+  	fi
+  	
+  	# Instruct user to plug in replacement USB drive before writing 9th
+  	if [ ${i} -eq 9 ]
+  	then
+  	printf "\n\e[1;32m PLUG IN REPLACEMENT DRIVE NOW!\e[0m\n\n"
+  	fi
+  
+  # Set filename
+  filename=$(printf "file%03d.dat" $i)
+  printf "Writing %s at 1MB/s...\n" "${filename}"
+  
+  # Write random data at a steady 1MB/s, preventing unnecessary output to screen
+  head -c 10M /dev/urandom | pv -L 1M > ${filename} 2>/dev/null
+  
+  # Record the hashes of the 30 files in a separate file
+  md5sum ${filename} >> checksums.md5
+  
+  # Increment counter by 1
+  ((i++))
+  
+  # End of loop
+  done
+  
+  # Confirm data is intact
+  printf "Finished writing random data..."
+  printf "Verifying data integrity..."
+  md5sum -c checksums.md5
+  ```
+  + Enable EPEL and download the ```pv``` package
+    ```console
+    $ sudo subscription-manager repos --enable codeready-builder-for-rhel-10-$(arch)-rpms
+    $ sudo dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm
+    $ sudo dnf clean all
+    $ sudo dnf install -y pv
+    ```
+  + Execute the test
+    ```console
+    $ chmod +x /test.sh
+    $ /test.sh
+    ```
+
+  ## Troubleshooting
+  + I pulled out a USB as planned, but was unable to add the 5th USB to the RAID before the script concluded. Because of RAID 10's resilience, the integrity checks passed with the 3 drives anyway.
+  + The new USB did not appear, only the controller.
+    ```Powershell
+    PS> usbipd list
+    (...)
+    Bus 002 Device 001: ID CCCC:DDDD Linux 6.18.33.2-microsoft-standard-WSL2 vhci_hcd USB/IP Virtual Host Controller
+    (...)
+    PS> usipd attach --wsl --busid 2-1
+    ```
+  + While I could still attach the controller to WSL2, it did not recognize it as a USB. I ended up removing then inserting the module, reattaching all four USBs again.
+    ```console
+    $ modprobe -r vhci_hcd
+    $ modprobe vhci_hcd
+    ```
+    ```Powershell
+    PS> usipd attach --wsl --busid 2-1
+    PS> usipd attach --wsl --busid 2-2
+    PS> usipd attach --wsl --busid 3-1
+    PS> usipd attach --wsl --busid 3-2
+    ```
+  + Because I didn't mark which drive is which, I did not know which ```/dev/sdX``` was the new USB drive. So I needed to read the superblocks to determine it. The lone partition which lacked the RAID indicator was the new drive, which was then ```fdisk```'d.
+    ```console
+    $ sudo mdadm --examine /dev/sd[a-z]1
+    ```
+  + Finally, we rebuild the RAID and see the recovery live.
+    ```console
+    $ sudo mdadm --stop /dev/md0
+    $ sudo mdadm --assemble --scan
+    $ sudo mdadm --manage /dev/md0 --add /dev/sdi1 
+    $ watch -n 1 cat /proc/mdstat
+    ```
+  + At this point, the new USB and the old USB on the same stripe begin blinking rapidly as the RAID gets rebuilt.
+  + The rebuilding took over 30 minutes, and Wireshark captured thousands of TCP traffic per second between the virtualized hosts.
+  + 
